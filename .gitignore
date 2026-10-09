@@ -1,9 +1,27 @@
 __pycache__/
 *.pyc
+*.pyo
+
+# Entorno virtual que crea el instalador
 .venv/
-*.png
-*.svg
-*.pdf
-nodos.csv
-edges.csv
+
+# Imágenes de vista previa: las genera el instalador en cada equipo
+assets/
+
+# Figuras exportadas por el usuario
+/*.png
+/*.svg
+/*.pdf
+
+# Datos de trabajo en la raíz (los ejemplos viven en ejemplos/ y sí se versionan)
+/nodos.csv
+/aristas.csv
+/edges.csv
+/matriz.csv
+/matriz.npy
+
+# Configuración local de la aplicación
+.netplotbrain_gui.json
+
 .DS_Store
+Thumbs.db

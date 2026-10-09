@@ -1,9 +1,24 @@
-netplotbrain>=0.3.0
-numpy>=1.24,<2.0
-pandas>=1.5
-matplotlib>=3.5
-nibabel>=4.0
-scipy>=1.9
-scikit-image>=0.19
-networkx>=2.8
-templateflow>=24.0
+# Versiones congeladas, probadas juntas. No las cambies sin volver a probar.
+#
+# numpy<2.0 es obligatorio: netplotbrain usa APIs que NumPy 2.x eliminó.
+# El instalador lo instala antes que todo lo demás por ese motivo.
+# Esta es también la razón por la que la aplicación vive en su propio .venv:
+# así no fuerza numpy<2.0 sobre el resto de tus proyectos.
+
+netplotbrain==0.3.0
+numpy==1.26.4
+pandas==3.0.2
+matplotlib==3.10.8
+nibabel==5.4.2
+scipy==1.17.1
+scikit-image==0.26.0
+networkx==3.6.1
+templateflow==25.1.2
+
+# Lectura de Excel (.xlsx y .xls antiguo)
+openpyxl==3.1.5
+xlrd==2.0.2
+
+# Detección de recursos del sistema (RAM, CPU) e imágenes de vista previa
+psutil==7.2.2
+Pillow==12.1.1

@@ -1,0 +1,16 @@
+# Librerías del servidor de renderizado.
+# numpy no aparece aquí a propósito: el Dockerfile lo instala antes, fijado a
+# <2.0, para que la resolución de dependencias no lo suba a 2.x.
+
+netplotbrain==0.3.0
+pandas==3.0.2
+matplotlib==3.10.8
+nibabel==5.4.2
+scipy==1.17.1
+scikit-image==0.26.0
+networkx==3.6.1
+templateflow==25.1.2
+
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.0
