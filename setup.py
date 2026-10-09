@@ -240,26 +240,53 @@ def python_del_venv():
     return VENV / ("Scripts/python.exe" if ES_WINDOWS else "bin/python")
 
 
+def venv_ve_el_sistema():
+    """
+    ¿El .venv existente fue creado con --system-site-packages?
+
+    Las versiones anteriores del instalador lo hacían. Es un problema: si una
+    librería ya está instalada globalmente con la versión exacta que pide
+    requirements.txt, pip NO la copia dentro del .venv y la aplicación acaba
+    dependiendo de la copia global. El día que esa copia global cambie —al
+    instalar vectorbt, por ejemplo— la aplicación se rompe, que es justo lo que
+    el entorno aislado debía evitar.
+    """
+    cfg = VENV / "pyvenv.cfg"
+    try:
+        for linea in cfg.read_text(encoding="utf-8").splitlines():
+            if linea.lower().replace(" ", "").startswith("include-system-site-packages=true"):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def crear_venv(python_base):
     if python_del_venv().exists():
         v = version_de(str(python_del_venv()))
-        if v in VERSIONES_OK:
-            ok(f"Ya existe un .venv con Python {v[0]}.{v[1]}; se reutiliza.")
+        if v not in VERSIONES_OK:
+            aviso("El .venv existente tiene una versión de Python incompatible; se recrea.")
+            shutil.rmtree(VENV, ignore_errors=True)
+        elif venv_ve_el_sistema():
+            aviso("El .venv existente se creó con la configuración antigua, que deja")
+            print("      entrar librerías del sistema. Se recrea para que quede aislado")
+            print("      de verdad (se vuelven a descargar las librerías).")
+            shutil.rmtree(VENV, ignore_errors=True)
+        else:
+            ok(f"Ya existe un .venv aislado con Python {v[0]}.{v[1]}; se reutiliza.")
             return True
-        aviso("El .venv existente tiene una versión incompatible; se recrea.")
-        shutil.rmtree(VENV, ignore_errors=True)
 
     print("  Creando entorno virtual aislado en .venv ...")
-    # --system-site-packages permite reutilizar librerías ya instaladas que sean
-    # compatibles. Lo que se instale dentro del .venv siempre tiene prioridad,
-    # así que numpy<2.0 no afecta a otros proyectos tuyos (vectorbt, etc.).
-    if not correr([python_base, "-m", "venv", "--system-site-packages", str(VENV)]):
+    # Sin --system-site-packages, a propósito: todas las librerías se instalan
+    # DENTRO del .venv. Así la aplicación no depende de nada que tengas
+    # instalado globalmente, y nada que instales después puede romperla.
+    if not correr([python_base, "-m", "venv", str(VENV)]):
         error("No se pudo crear el entorno virtual.")
         if not ES_WINDOWS:
             print("      En Debian/Ubuntu puede faltar el paquete python3-venv:")
             print("        sudo apt install python3-venv")
         return False
-    ok("Entorno virtual creado.")
+    ok("Entorno virtual creado (aislado del Python del sistema).")
     return True
 
 
@@ -292,6 +319,41 @@ def instalar_librerias():
         error("Falló la instalación de alguna librería.")
         return False
     ok("Librerías instaladas.")
+    return comprobar_aislamiento()
+
+
+def comprobar_aislamiento():
+    """
+    Confirma que las librerías clave viven DENTRO del .venv.
+
+    Si alguna se estuviera tomando del Python del sistema, la aplicación
+    quedaría a merced de lo que instales después en ese Python. Mejor
+    enterarse ahora que el día que deje de arrancar.
+    """
+    codigo = (
+        "import json,sys,numpy,pandas,netplotbrain,matplotlib\n"
+        "mods={'numpy':numpy,'pandas':pandas,'netplotbrain':netplotbrain,"
+        "'matplotlib':matplotlib}\n"
+        "print(json.dumps({n:m.__file__ for n,m in mods.items()}))\n"
+    )
+    salida = capturar([str(python_del_venv()), "-c", codigo])
+    if not salida:
+        aviso("No se pudo comprobar el aislamiento del entorno.")
+        return True
+    try:
+        rutas = json.loads(salida.splitlines()[-1])
+    except (ValueError, IndexError):
+        return True
+
+    base = str(VENV.resolve())
+    fuera = [n for n, r in rutas.items() if not str(Path(r).resolve()).startswith(base)]
+    if fuera:
+        aviso(f"Estas librerías se están tomando de fuera del .venv: {', '.join(fuera)}")
+        print("      La aplicación funcionará, pero podría romperse si cambias esas")
+        print("      librerías en tu Python del sistema. Para arreglarlo, borra la")
+        print("      carpeta .venv y vuelve a ejecutar el instalador.")
+    else:
+        ok("Todas las librerías quedaron dentro del .venv.")
     return True
 
 

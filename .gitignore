@@ -22,6 +22,7 @@ assets/
 
 # Configuración local de la aplicación
 .netplotbrain_gui.json
+.netplotbrain_gui.log
 
 .DS_Store
 Thumbs.db

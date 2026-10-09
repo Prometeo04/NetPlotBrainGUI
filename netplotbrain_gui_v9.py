@@ -175,6 +175,57 @@ class Config:
 
 
 # ══════════════════════════════════════════════
+# Registro de errores
+# ══════════════════════════════════════════════
+class Registro:
+    """
+    Guarda los errores en un archivo de texto.
+
+    Hace falta porque el acceso directo abre la aplicación con pythonw.exe, que
+    no tiene consola: sin esto, un fallo no deja rastro en ninguna parte y no
+    hay nada que mandar para diagnosticarlo.
+    """
+
+    ruta = Path.home() / ".netplotbrain_gui.log"
+    LIMITE_BYTES = 512 * 1024  # al pasarse, se empieza de nuevo
+
+    @classmethod
+    def escribir(cls, titulo, detalle, contexto=None):
+        """Añade una entrada al registro y devuelve su ruta, o None si no se pudo."""
+        try:
+            if cls.ruta.exists() and cls.ruta.stat().st_size > cls.LIMITE_BYTES:
+                cls.ruta.unlink()
+            sello = time.strftime("%Y-%m-%d %H:%M:%S")
+            partes = [
+                "",
+                "=" * 70,
+                f"{sello}   NetPlotBrain GUI v{VERSION}",
+                f"Python {sys.version.split()[0]} en {platform.system()} {platform.release()}",
+                f"-- {titulo} --",
+            ]
+            if contexto:
+                partes.append("Configuración del render:")
+                for clave, valor in contexto.items():
+                    # Solo se escriben valores simples. Cualquier otra cosa (un
+                    # DataFrame, un array) se reduce a su tipo: el registro no
+                    # debe acabar conteniendo los datos del estudio, por corto
+                    # que parezca su repr.
+                    if isinstance(valor, (str, int, float, bool, type(None))):
+                        texto = repr(valor)
+                        if len(texto) > 200:
+                            texto = texto[:200] + "… (recortado)"
+                    else:
+                        texto = f"<{type(valor).__name__}>"
+                    partes.append(f"  {clave} = {texto}")
+            partes.append(detalle.rstrip())
+            with cls.ruta.open("a", encoding="utf-8") as f:
+                f.write("\n".join(partes) + "\n")
+            return cls.ruta
+        except Exception:
+            return None  # el registro nunca debe ser motivo de otro error
+
+
+# ══════════════════════════════════════════════
 # Cliente de la nube (servidor propio en Hugging Face Spaces)
 # ══════════════════════════════════════════════
 class ErrorNube(Exception):
@@ -2282,12 +2333,40 @@ class AplicacionNetPlotBrain:
             trabajo,
             lambda res: self._figura_lista(res, kw=kw, desde_nube=True, respaldo_local=respaldo_local))
 
+    @staticmethod
+    def _contexto_para_registro(kw):
+        """
+        Parámetros del render que sirven para diagnosticar, sin datos de pacientes.
+
+        Se guardan los ajustes (estilo, vista, tipo de nodo...) y solo el TAMAÑO
+        de las tablas, nunca las coordenadas: el registro no debe convertirse en
+        una copia de los datos.
+        """
+        if not kw:
+            return None
+        interesantes = ("template", "template_style", "template_voxelsize", "view",
+                        "node_type", "node_scale", "hemisphere", "frames")
+        ctx = {k: kw[k] for k in interesantes if k in kw}
+        for clave in ("nodes", "edges"):
+            valor = kw.get(clave)
+            if valor is not None:
+                try:
+                    ctx[f"{clave}_filas"] = len(valor)
+                except TypeError:
+                    ctx[f"{clave}_filas"] = type(valor).__name__
+        return ctx
+
     def _figura_lista(self, resultado, kw=None, desde_nube=False, respaldo_local=False):
         if "error" in resultado:
             e = resultado["error"]
+            msg = str(e)
+            ruta_log = None
             if not isinstance(e, ErrorNube):  # los ErrorNube ya traen un mensaje claro; no hace falta el traceback
                 print(resultado.get("tb", ""), file=sys.stderr)
-            msg = str(e)
+                ruta_log = Registro.escribir(
+                    "Error al generar la figura",
+                    resultado.get("tb", msg),
+                    contexto=self._contexto_para_registro(kw))
             if desde_nube:
                 if isinstance(e, ErrorNube):
                     messagebox.showerror("No se pudo usar la nube", msg)
@@ -2298,17 +2377,19 @@ class AplicacionNetPlotBrain:
                         "Renderizar en tu equipo", "¿Quieres hacer el render en tu equipo en su lugar?"):
                     self._renderizar_local(kw)
                 return
+            pie = (f"\n\nEl detalle técnico quedó guardado en:\n{ruta_log}\n"
+                   "Si vas a reportar el fallo, adjunta ese archivo.") if ruta_log else ""
             if isinstance(e, FileNotFoundError):
                 messagebox.showerror("Template no encontrado",
-                                     f"No se pudo obtener el template.\nRevisa tu conexión a internet.\n\n{msg}")
+                                     f"No se pudo obtener el template.\nRevisa tu conexión a internet.\n\n{msg}{pie}")
             elif "nonzero" in msg.lower() or "0-d" in msg:
                 messagebox.showerror("Incompatibilidad con NumPy",
-                                     f"Solución:  pip install \"numpy>=1.24,<2.0\"\n\n{msg}")
+                                     f"Solución:  pip install \"numpy>=1.24,<2.0\"\n\n{msg}{pie}")
             elif "multiply sequence" in msg.lower():
                 messagebox.showerror("Error de tipo",
-                                     f"Un parámetro numérico recibió un tipo incorrecto.\n\n{msg}")
+                                     f"Un parámetro numérico recibió un tipo incorrecto.\n\n{msg}{pie}")
             else:
-                messagebox.showerror("Error al generar la figura", f"{type(e).__name__}: {msg}")
+                messagebox.showerror("Error al generar la figura", f"{type(e).__name__}: {msg}{pie}")
             self.var_estado.set("Ocurrió un error al generar la figura.")
             return
         fig, png = resultado["ok"]
@@ -2488,8 +2569,30 @@ def configurar_estilos(raiz, fuente):
 # ══════════════════════════════════════════════
 # Programa principal
 # ══════════════════════════════════════════════
+def _error_no_capturado(tipo, valor, tb):
+    """
+    Último recinto: cualquier fallo que nadie haya atrapado acaba aquí.
+
+    tkinter, por omisión, se traga los errores que ocurren dentro de un
+    callback y los manda a stderr. Con pythonw.exe no hay stderr, así que sin
+    esto el usuario solo ve que «no pasó nada».
+    """
+    detalle = "".join(traceback.format_exception(tipo, valor, tb))
+    print(detalle, file=sys.stderr)
+    ruta = Registro.escribir("Error no capturado", detalle)
+    try:
+        pie = f"\n\nEl detalle quedó en:\n{ruta}" if ruta else ""
+        messagebox.showerror("Error inesperado",
+                             f"{tipo.__name__}: {valor}{pie}")
+    except Exception:
+        pass
+
+
 def main():
+    sys.excepthook = _error_no_capturado
     raiz = tk.Tk()
+    # tkinter atrapa aparte los errores de sus propios callbacks
+    raiz.report_callback_exception = _error_no_capturado
     app_fuente = "TkDefaultFont"
     familias = set(tkfont.families())
     for f in ("Segoe UI", "Helvetica Neue", "Noto Sans", "DejaVu Sans", "Arial"):

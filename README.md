@@ -38,6 +38,34 @@ romperías cualquier otro proyecto que use numpy 2.x (vectorbt, por ejemplo).
 El `.venv` evita exactamente eso: las versiones que necesita esta aplicación
 viven dentro de su carpeta y no salen de ahí.
 
+El aislamiento es **completo**: el instalador no usa `--system-site-packages`.
+Si lo usara, pip se saltaría la instalación dentro del `.venv` de cualquier
+librería que ya estuviera en tu Python global con la versión exacta, y la
+aplicación acabaría dependiendo de esa copia externa. El día que la cambiaras,
+se rompería. Al terminar, el instalador verifica que numpy, pandas,
+matplotlib y netplotbrain estén efectivamente dentro del `.venv` y avisa si
+alguna no lo está.
+
+### Si ya tenías una versión anterior instalada
+
+No hay conflicto. El instalador detecta el `.venv` viejo y, si se creó con la
+configuración antigua (la que dejaba entrar librerías del sistema) o con una
+versión de Python incompatible, lo **borra y lo vuelve a crear** aislado. Tus
+datos, tu configuración (`~/.netplotbrain_gui.json`) y los templates ya
+descargados se conservan.
+
+### Si algo falla
+
+Los errores se guardan en `~/.netplotbrain_gui.log` con la fecha, la versión,
+el sistema operativo y los ajustes del render. El diálogo de error te dice la
+ruta del archivo. Hace falta porque el acceso directo abre la aplicación con
+`pythonw.exe`, que no tiene consola: sin ese registro, un fallo no dejaría
+rastro en ningún lado.
+
+El registro guarda **los ajustes, no los datos**: estilo, vista, tipo de nodo y
+el número de filas de cada tabla, nunca las coordenadas. Puedes adjuntarlo a un
+reporte de error sin exponer información del estudio.
+
 ### Requisitos
 
 - Windows 10/11, Linux o macOS
