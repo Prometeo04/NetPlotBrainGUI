@@ -69,12 +69,21 @@ reporte de error sin exponer información del estudio.
 ### Requisitos
 
 - Windows 10/11, Linux o macOS
-- Cualquier Python 3.9 o posterior para arrancar el instalador
+- **git** (o descargar el ZIP desde el botón verde «Code» de GitHub)
+- **Cualquier Python 3.9 o posterior** para arrancar el instalador
   ([descargar](https://www.python.org/downloads/)). No tiene que ser una
-  versión compatible: el instalador resuelve eso.
+  versión compatible: si tienes 3.13, el instalador descarga un 3.12 aparte.
 - En Windows, marca **«Add Python to PATH»** al instalar Python.
 - En Linux puede faltar `tkinter`: `sudo apt install python3-tk`
   (el instalador lo detecta y te lo dice).
+- **Internet** y cerca de **1 GB de disco** (las librerías pesan unos 400 MB;
+  los templates, si los descargas, otros 200–600 MB).
+
+### Sin git
+
+Si en esa computadora no hay git, descarga el ZIP desde GitHub
+(botón verde **Code → Download ZIP**), descomprímelo y ejecuta `python setup.py`
+dentro de la carpeta. El resultado es el mismo.
 
 ---
 

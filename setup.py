@@ -448,40 +448,81 @@ print("  Descarga de templates terminada.")
 # ──────────────────────────────────────────────────────────────────────
 # 4. Acceso directo
 # ──────────────────────────────────────────────────────────────────────
+def escritorio_windows():
+    """
+    Carpeta real del Escritorio en Windows.
+
+    No basta con %USERPROFILE%\\Desktop: cuando OneDrive respalda el Escritorio
+    lo mueve dentro de la carpeta de OneDrive, y el registro es el único sitio
+    que sabe dónde quedó. Se consulta ahí primero y se dejan rutas de reserva
+    por si el registro no estuviera disponible.
+    """
+    candidatos = []
+    try:
+        import winreg  # solo existe en Windows
+        clave = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, clave) as k:
+            valor, _ = winreg.QueryValueEx(k, "Desktop")
+            candidatos.append(os.path.expandvars(valor))
+    except Exception:
+        pass
+
+    perfil = os.environ.get("USERPROFILE", str(Path.home()))
+    onedrive = os.environ.get("OneDrive") or os.environ.get("OneDriveConsumer")
+    if onedrive:
+        candidatos.append(os.path.join(onedrive, "Desktop"))
+        candidatos.append(os.path.join(onedrive, "Escritorio"))
+    candidatos.append(os.path.join(perfil, "Desktop"))
+    candidatos.append(os.path.join(perfil, "Escritorio"))
+
+    for ruta in candidatos:
+        if ruta and os.path.isdir(ruta):
+            return ruta
+    return None
+
+
 def crear_acceso_directo():
     if not ES_WINDOWS:
         print("  Para abrir la aplicación:")
         print(f"    {python_del_venv()} {RAIZ / APP}")
         return
+
     py = str(python_del_venv())
-    codigo = r'''
-import os, sys
-try:
-    import winshell
-    from win32com.client import Dispatch
-except Exception:
-    sys.exit(3)
-escritorio = winshell.desktop()
-atajo = os.path.join(escritorio, "NetPlotBrain GUI.lnk")
-s = Dispatch("WScript.Shell").CreateShortCut(atajo)
-s.Targetpath = sys.argv[1]
-s.Arguments = f'"{sys.argv[2]}"'
-s.WorkingDirectory = sys.argv[3]
-if os.path.exists(sys.argv[4]):
-    s.IconLocation = sys.argv[4]
-s.save()
-print(atajo)
-'''
+    # pythonw.exe abre la aplicación sin una ventana de consola detrás.
     pythonw = Path(py).with_name("pythonw.exe")
     destino = str(pythonw if pythonw.exists() else py)
-    correr([py, "-m", "pip", "install", "--quiet", "pywin32", "winshell"],
-           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if correr([py, "-c", codigo, destino, str(RAIZ / APP), str(RAIZ),
-               str(RAIZ / "netplotbrain_gui.ico")]):
-        ok("Acceso directo creado en el escritorio.")
+
+    escritorio = escritorio_windows()
+    if escritorio is None:
+        aviso("No se encontró la carpeta del Escritorio. Para abrir la aplicación:")
+        print(f"      \"{destino}\" \"{RAIZ / APP}\"")
+        return
+
+    atajo = os.path.join(escritorio, "NetPlotBrain GUI.lnk")
+    icono = RAIZ / "netplotbrain_gui.ico"
+
+    # Se crea con PowerShell en lugar de pywin32: PowerShell viene con Windows,
+    # así que no hay que instalar nada y hay una cosa menos que pueda fallar.
+    ps = (
+        "$ErrorActionPreference='Stop';"
+        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:ATAJO);"
+        "$s.TargetPath=$env:DESTINO;"
+        "$s.Arguments='\"'+$env:GUION+'\"';"
+        "$s.WorkingDirectory=$env:TRABAJO;"
+        "if(Test-Path $env:ICONO){$s.IconLocation=$env:ICONO};"
+        "$s.Save()"
+    )
+    entorno = dict(os.environ, ATAJO=atajo, DESTINO=destino,
+                   GUION=str(RAIZ / APP), TRABAJO=str(RAIZ), ICONO=str(icono))
+    hecho = correr(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                   env=entorno, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    if hecho and os.path.exists(atajo):
+        ok("Acceso directo «NetPlotBrain GUI» creado en el escritorio.")
+        print(f"      {escritorio}")
     else:
-        aviso("No se pudo crear el acceso directo. Para abrir la aplicación:")
-        print(f"      {py} {RAIZ / APP}")
+        aviso("No se pudo crear el acceso directo (no es grave). Para abrir la aplicación:")
+        print(f"      \"{destino}\" \"{RAIZ / APP}\"")
 
 
 # ──────────────────────────────────────────────────────────────────────
